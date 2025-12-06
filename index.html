@@ -3,291 +3,366 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>争覇戦ポイント計算（完全OCR可変版）</title>
+<title>争覇戦ポイント計算（2枚OCR・完全版）</title>
 
-<!-- OCR -->
+<!-- Tesseract OCR -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-<!-- html2canvas（PNG出力） -->
+<!-- html2canvas (出力用) -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <style>
 :root{
-  --bg:#0d0d11;
-  --panel:#1e1e25;
-  --fg:#eaeaea;
-  --th:#2d2d37;
-  --hl:#4d3b00;
-  --accent:#288cff;
-  --danger:#e04444;
-  --gold:#cda11c;
+  --bg:#0f0f12; --panel:#1b1b1f; --fg:#f2f2f2; --muted:#bfbfbf;
+  --accent:#2e8bff; --gold:#cda11c; --danger:#e04b4b; --hl:#534200;
 }
+body{margin:12px;background:var(--bg);color:var(--fg);font-family: "Segoe UI", Arial, sans-serif;}
+h1{text-align:center;color:#ffd86b;margin-bottom:8px;text-shadow:0 0 8px #5b3f00}
+.controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px}
+button{border:none;padding:10px 14px;border-radius:8px;cursor:pointer;color:#fff}
+.blue{background:var(--accent)}.gold{background:var(--gold)}.red{background:var(--danger)}
+#status{ text-align:center;color:var(--muted);margin-top:8px;margin-bottom:6px}
 
-body{
-  margin:10px;
-  background:var(--bg);
-  color:var(--fg);
-  font-family:"Segoe UI", Arial, sans-serif;
-}
-
-h1{
-  text-align:center;
-  color:#ffda7b;
-  text-shadow:0 0 8px #5b3f00;
-}
-
-button{
-  border:none;
-  padding:10px 14px;
-  border-radius:8px;
-  cursor:pointer;
-  color:#fff;
-}
-
-.blue{background:var(--accent)}
-.red{background:var(--danger)}
-.gold{background:var(--gold)}
-
-.controls{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  justify-content:center;
-  margin-bottom:10px;
-}
-
-table{
-  width:100%;
-  border-collapse:collapse;
-  background:var(--panel);
-  box-shadow:0 5px 15px rgba(0,0,0,0.4);
-}
-
-th, td{
-  border:1px solid rgba(255,255,255,0.07);
-  padding:6px;
-  text-align:center;
-  font-size:14px;
-}
-
-th{ background:var(--th); }
-
-input{
-  width:90%;
-  padding:4px 6px;
-  border:none;
-  border-radius:5px;
-  font-size:14px;
-}
-
-.highlight{ background:var(--hl) !important; }
-
-@media(max-width: 600px){
-  th, td{ font-size:12px; padding:4px; }
-  input{ font-size:12px }
+/* table */
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;background:var(--panel);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
+th,td{border:1px solid rgba(255,255,255,0.06);padding:6px;text-align:center;font-size:14px}
+th{background:#2b2b2f}
+input[type="text"],input[type="number"]{width:92%;padding:6px;border-radius:6px;border:none;font-size:13px}
+img.icon{width:40px;height:40px;border-radius:4px;object-fit:cover}
+.row-highlight{background:var(--hl) !important}
+@media(max-width:600px){
+  th,td{font-size:12px;padding:4px}
+  input{font-size:12px}
 }
 </style>
 </head>
-
 <body>
 
-<h1>争覇戦ポイント計算（完全OCR可変版）</h1>
+<h1>争覇戦ポイント計算（2枚OCR・完全版）</h1>
 
-<!-- 操作ボタン -->
 <div class="controls">
   <button class="blue" onclick="sortTable(true)">▲ 昇順</button>
   <button class="red" onclick="sortTable(false)">▼ 降順</button>
-  <button class="gold" onclick="exportImage()">📷 画像出力</button>
+  <button class="gold" onclick="exportPNG()">📷 表を画像で保存</button>
 </div>
 
-<!-- OCR入力 -->
-<div style="text-align:center;">
-  <label style="display:block;margin-bottom:6px;">📸 スクショを選択（左アイコン・右同盟名）</label>
-  <input id="files" type="file" accept="image/*" multiple onchange="readImages()">
-  <div id="status" style="margin-top:8px;font-size:14px;color:#ccc;"></div>
+<div style="text-align:center;margin-bottom:6px">
+  <label>📸 スクショを選択（上半分・下半分の2枚。左：アイコン、右：同盟名）</label><br>
+  <input id="files" type="file" accept="image/*" multiple onchange="onFilesSelected(this.files)">
+  <div style="margin-top:6px;">
+    <label style="font-size:13px;color:var(--muted)">1画像あたりの行数</label>
+    <input id="rowsPerImage" type="number" value="5" min="1" max="20" style="width:60px;margin-left:8px">
+  </div>
+  <div id="status"></div>
 </div>
 
-<!-- テーブル -->
-<table id="table">
-  <thead id="thead">
-    <tr>
-      <th>アイコン</th>
-      <th>同盟名</th>
-      <th>1日</th>
-      <th>2日</th>
-      <th>3日</th>
-      <th>4日</th>
-      <th>5日</th>
-      <th>6日</th>
-      <th>合計</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+<div class="table-wrap">
+  <table id="mainTable" aria-label="争覇戦ポイント表">
+    <thead>
+      <tr>
+        <th>アイコン</th><th>同盟名</th>
+        <th>1日</th><th>2日</th><th>3日</th><th>4日</th><th>5日</th><th>6日</th><th>合計</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
 
 <script>
-/* ============================================
-   行追加（同盟データ 1件を行として作成）
-============================================ */
-function addRow(allianceName, iconData){
-  const tbody = document.getElementById("tbody");
-  const tr = document.createElement("tr");
+/* ====== ユーティリティ ====== */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-  /* アイコン */
-  const tdIcon = document.createElement("td");
-  const img = document.createElement("img");
-  img.src = iconData || "";
-  img.style.width="40px";
-  img.style.height="40px";
+/* ====== 表操作 ====== */
+function clearTable(){ $('tbody').innerHTML = ''; saveData(); }
+function addRow(name='', iconDataUrl=''){
+  const tbody = $('tbody');
+  const tr = document.createElement('tr');
+
+  // icon cell
+  const tdIcon = document.createElement('td');
+  const img = document.createElement('img');
+  img.className = 'icon';
+  img.src = iconDataUrl || '';
   tdIcon.appendChild(img);
   tr.appendChild(tdIcon);
 
-  /* 同盟名 */
-  const tdName = document.createElement("td");
-  const inputName = document.createElement("input");
-  inputName.type = "text";
-  inputName.value = allianceName || "";
-  inputName.oninput = ()=> calcRow(tr);
-  tdName.onclick = ()=> tr.classList.toggle("highlight");
-  tdName.appendChild(inputName);
+  // name cell
+  const tdName = document.createElement('td');
+  const inName = document.createElement('input');
+  inName.type='text'; inName.value = name; inName.oninput = () => saveData();
+  tdName.appendChild(inName);
+  tdName.onclick = ()=> tr.classList.toggle('row-highlight');
   tr.appendChild(tdName);
 
-  /* 日別ポイント（6日固定） */
-  for(let d=1; d<=6; d++){
-    const td = document.createElement("td");
-    const input = document.createElement("input");
-    input.type = "number";
-    input.value = 0;
-    input.oninput = ()=> calcRow(tr);
-    td.appendChild(input);
+  // 6 day inputs
+  for(let d=0; d<6; d++){
+    const td = document.createElement('td');
+    const inp = document.createElement('input');
+    inp.type='number'; inp.value=0; inp.oninput = ()=> { calcRowSum(tr); saveData(); };
+    td.appendChild(inp);
     tr.appendChild(td);
   }
 
-  /* 合計 */
-  const tdTotal = document.createElement("td");
-  tdTotal.textContent = 0;
+  const tdTotal = document.createElement('td');
+  tdTotal.textContent = '0';
   tr.appendChild(tdTotal);
 
   tbody.appendChild(tr);
+  calcRowSum(tr);
 }
 
-/* ============================================
-   行計算
-============================================ */
-function calcRow(tr){
-  const cells = tr.querySelectorAll("td");
+function calcRowSum(tr){
+  const tds = tr.querySelectorAll('td');
   let sum = 0;
-  for(let i=2;i<=7;i++){
-    sum += Number(cells[i].querySelector("input").value) || 0;
+  for(let i=2;i<8;i++){
+    const v = Number(tds[i].querySelector('input')?.value || 0);
+    sum += v;
   }
-  cells[8].textContent = sum;
+  tds[8].textContent = sum;
 }
 
-/* ============================================
-   並び替え
-============================================ */
+/* sort by total */
 function sortTable(asc){
-  const tbody = document.getElementById("tbody");
-  const rows = Array.from(tbody.querySelectorAll("tr"));
+  const tbody = $('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
   rows.sort((a,b)=>{
-    const A = Number(a.querySelector("td:last-child").textContent) || 0;
-    const B = Number(b.querySelector("td:last-child").textContent) || 0;
+    const A = Number(a.querySelector('td:last-child').textContent) || 0;
+    const B = Number(b.querySelector('td:last-child').textContent) || 0;
     return asc ? A-B : B-A;
   });
-  rows.forEach(r=>tbody.appendChild(r));
+  rows.forEach(r => tbody.appendChild(r));
+  saveData();
 }
 
-/* ============================================
-   PNG出力
-============================================ */
-function exportImage(){
-  const table = document.getElementById("table");
-  html2canvas(table, {scale:2}).then(canvas=>{
-    const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
-    a.download = "争覇戦ポイント表.png";
+/* save/load */
+function saveData(){
+  const rows = Array.from($('tbody').querySelectorAll('tr'));
+  const data = rows.map(r=>{
+    const img = r.querySelector('img.icon')?.src || '';
+    const name = r.querySelector('td:nth-child(2) input').value || '';
+    const days = [];
+    for(let i=0;i<6;i++) days.push(r.querySelectorAll('td')[2+i].querySelector('input').value || '0');
+    const total = r.querySelector('td:last-child').textContent || '0';
+    const highlight = r.classList.contains('row-highlight');
+    return {img,name,days,total,highlight};
+  });
+  localStorage.setItem('sohasen_table', JSON.stringify(data));
+}
+function loadData(){
+  const raw = localStorage.getItem('sohasen_table');
+  if(!raw) return;
+  try{
+    const data = JSON.parse(raw);
+    for(const row of data){
+      addRow(row.name, row.img);
+      const tr = $('tbody').lastChild;
+      for(let i=0;i<6;i++) tr.querySelectorAll('td')[2+i].querySelector('input').value = row.days[i] || 0;
+      if(row.highlight) tr.classList.add('row-highlight');
+      calcRowSum(tr);
+    }
+  }catch(e){ console.warn(e) }
+}
+loadData();
+
+/* ====== 画像処理ユーティリティ（canvas） ====== */
+function createCanvas(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+
+/* 前処理: 切り抜き→拡大→グレースケール→適応二値化→簡易膨張 */
+function preprocessForOCR(imgElement, crop){
+  // crop: {x,y,w,h}
+  // 1: crop
+  const temp = createCanvas(crop.w, crop.h);
+  const tctx = temp.getContext('2d');
+  tctx.drawImage(imgElement, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+
+  // 2: upscale for clarity
+  const scale = 3;
+  const W = crop.w * scale;
+  const H = crop.h * scale;
+  const canvas = createCanvas(W,H);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(temp, 0, 0, temp.width, temp.height, 0, 0, W, H);
+
+  // 3: grayscale & adaptive threshold (simple local mean via integral image)
+  const im = ctx.getImageData(0,0,W,H);
+  const d = im.data;
+  const lum = new Float32Array(W*H);
+  for(let i=0,j=0;i<d.length;i+=4,j++){
+    lum[j] = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+  }
+  // integral image
+  const S = new Float64Array((W+1)*(H+1));
+  for(let y=0;y<H;y++){
+    let rowsum = 0;
+    for(let x=0;x<W;x++){
+      rowsum += lum[y*W + x];
+      S[(y+1)*(W+1) + (x+1)] = S[(y)*(W+1) + (x+1)] + rowsum;
+    }
+  }
+  const win = Math.max(15, Math.floor(Math.min(W,H) * 0.03));
+  const half = Math.floor(win/2);
+  const C = 10;
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const x1 = Math.max(0, x-half);
+      const y1 = Math.max(0, y-half);
+      const x2 = Math.min(W-1, x+half);
+      const y2 = Math.min(H-1, y+half);
+      const area = (x2-x1+1)*(y2-y1+1);
+      const sum = S[(y2+1)*(W+1)+(x2+1)] - S[(y1)*(W+1)+(x2+1)] - S[(y2+1)*(W+1)+(x1)] + S[(y1)*(W+1)+(x1)];
+      const mean = sum / area;
+      const idx = (y*W + x);
+      const out = lum[idx] > (mean - C) ? 255 : 0;
+      const p = idx*4;
+      d[p]=d[p+1]=d[p+2]=out; d[p+3]=255;
+    }
+  }
+  ctx.putImageData(im, 0, 0);
+
+  // small dilation to connect strokes
+  const imgd = ctx.getImageData(0,0,W,H);
+  const src = imgd.data;
+  const dst = new Uint8ClampedArray(src.length);
+  for(let i=0;i<src.length;i+=4) dst[i+3]=255;
+  for(let y=1;y<H-1;y++){
+    for(let x=1;x<W-1;x++){
+      let any=false;
+      for(let dy=-1;dy<=1 && !any;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          const ni = ((y+dy)*W + (x+dx))*4;
+          if(src[ni] > 128) { any=true; break; }
+        }
+      }
+      const ii = (y*W + x)*4;
+      dst[ii]=dst[ii+1]=dst[ii+2]= any ? 255 : 0;
+    }
+  }
+  const outImg = new ImageData(dst, W, H);
+  ctx.putImageData(outImg, 0, 0);
+
+  return canvas.toDataURL('image/png');
+}
+
+/* ====== 行検出（簡易） ======
+   rowsPerImage: ユーザー入力で指定（5など）
+   Strategy:
+   - 画像高さ H を rowsPerImage 等分して中心ラインを取得
+   - 各行の左アイコン領域（固定比率）と右テキスト領域を切り出す
+================================ */
+async function processOneImageFile(file, rowsPerImage, destArray){
+  // load image element
+  const img = await new Promise((res, rej)=>{
+    const url = URL.createObjectURL(file);
+    const i = new Image();
+    i.onload = ()=>{ URL.revokeObjectURL(url); res(i); };
+    i.onerror = rej;
+    i.src = url;
+  });
+
+  const W = img.naturalWidth, H = img.naturalHeight;
+  // compute approximate row height
+  const rowH = Math.max(40, Math.floor(H / (Math.max(3, rowsPerImage + 1))));
+  // small vertical offset to avoid header area
+  // assume list starts around 18% from top (tuned for your screenshots)
+  const startY = Math.floor(H * 0.18);
+
+  // icon area and text area (ratios tuned for the provided screenshots)
+  const iconAreaWidth = Math.floor(W * 0.12); // left column width for icon
+  const iconPad = 8;
+  const textStartX = iconAreaWidth + 12;
+  const textEndX = Math.floor(W * 0.86);
+  const textW = textEndX - textStartX;
+
+  for(let r=0; r<rowsPerImage; r++){
+    const cy = startY + r * rowH;
+    const sy = Math.max(0, cy - Math.floor(rowH/2));
+    const sh = Math.min(rowH-6, H - sy);
+    // icon crop
+    const iconCrop = { x: 6, y: sy, w: Math.max(32, iconAreaWidth - iconPad), h: sh };
+    const cIcon = createCanvas(iconCrop.w, iconCrop.h);
+    cIcon.getContext('2d').drawImage(img, iconCrop.x, iconCrop.y, iconCrop.w, iconCrop.h, 0,0,iconCrop.w,iconCrop.h);
+    const iconDataUrl = cIcon.toDataURL('image/png');
+
+    // text crop
+    const textCrop = { x: textStartX, y: sy, w: Math.max(80, textW), h: sh };
+    const preDataUrl = preprocessForOCR(img, textCrop);
+    // convert to blob and OCR
+    try{
+      const blob = await (await fetch(preDataUrl)).blob();
+      const res = await Tesseract.recognize(blob, 'jpn+eng', {
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE || 7
+      });
+      let raw = (res.data && res.data.text) ? res.data.text : '';
+      raw = raw.replace(/\n/g,' ').trim();
+      // normalize common artifacts
+      raw = raw.replace(/[★☆◆◇•●✦\*\[\]\(\)]/g,'').replace(/\s{2,}/g,' ').trim();
+      // discard UI words
+      if(/pt|累計|位|シーズン|終了|残り|あと|報酬|グループ|切り替え|選抜/i.test(raw)) raw = '';
+      if(raw.length >= 2 && raw.length <= 28){
+        destArray.push({ name: raw, icon: iconDataUrl });
+      } else {
+        // allow fallback short names of length 1+ (rare)
+        if(raw.length>=1) destArray.push({ name: raw, icon: iconDataUrl });
+      }
+    }catch(e){
+      console.warn('OCR error', e);
+    }
+    await sleep(80); // keep UI responsive
+  }
+}
+
+/* ====== メイン：2枚の画像を読み込んで表を自動生成 ====== */
+async function onFilesSelected(filesList){
+  const files = Array.from(filesList || []);
+  if(files.length === 0) return;
+  $('status').textContent = 'OCR処理中… 画像サイズにより数秒〜20秒かかります';
+  // rows per image
+  let rowsPerImage = Number($('rowsPerImage').value) || 5;
+  // ensure availability: if only 1 file, still process it
+  const results = [];
+  for(let i=0;i<files.length;i++){
+    await processOneImageFile(files[i], rowsPerImage, results);
+  }
+
+  // results is array of {name, icon} in sequence top->bottom per image
+  if(results.length === 0){
+    $('status').textContent = '同盟名を検出できませんでした。画像をもう一度お試しください（明るさ・大きさ調整）';
+    return;
+  }
+
+  // clear current table and populate
+  clearTable();
+  // fill rows for each detected item
+  for(const it of results){
+    addRow(it.name, it.icon);
+  }
+  // save & finish
+  saveData();
+  $('status').textContent = `OCR完了（検出 ${results.length} 件）。必要に応じて名前を修正してください。`;
+}
+
+/* ====== 画像出力 ====== */
+function exportPNG(){
+  const table = $('mainTable');
+  $('status').textContent = '画像生成中…';
+  html2canvas(table, {scale:2, useCORS:true}).then(canvas=>{
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = '争覇戦ポイント.png';
     a.click();
+    $('status').textContent = '画像をダウンロードしました';
+  }).catch(e=>{
+    console.error(e);
+    $('status').textContent = '画像生成に失敗しました';
   });
 }
 
-/* ============================================
-   OCR前処理（2値化＋コントラスト強化）
-============================================ */
-function preprocess(img, crop){
-  const c = document.createElement("canvas");
-  c.width = crop.w;
-  c.height = crop.h;
-  const ctx = c.getContext("2d");
-
-  ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h,
-                     0,    0,       crop.w, crop.h);
-
-  const d = ctx.getImageData(0,0,c.width,c.height);
-  const px = d.data;
-
-  for(let i=0;i<px.length;i+=4){
-    const L = 0.22*px[i] + 0.71*px[i+1] + 0.07*px[i+2];
-    const v = L > 120 ? 255 : 0;
-    px[i]=px[i+1]=px[i+2]=v;
-  }
-
-  ctx.putImageData(d,0,0);
-  return c.toDataURL();
-}
-
-/* ============================================
-   左アイコン＋右同盟名の行を自動検出してOCR
-============================================ */
-async function readImages(){
-  const files = document.getElementById("files").files;
-  if(!files.length) return;
-
-  document.getElementById("status").textContent = "OCR実行中…";
-
-  for(const file of files){
-    // 画像読み込み
-    const img = await new Promise(res=>{
-      const i = new Image();
-      i.onload = ()=>res(i);
-      i.src = URL.createObjectURL(file);
-    });
-
-    const W = img.naturalWidth;
-    const H = img.naturalHeight;
-
-    // 縦スクロールの行高さ推定
-    const rowH = Math.floor(H / 8);
-
-    const iconW = Math.floor(W * 0.18);
-    const nameX = iconW + 20;
-    const nameW = W - nameX - 20;
-
-    for(let y=0; y<H; y+=rowH){
-      // アイコン部分切り抜き
-      const iconCrop = {x:10, y:y+10, w:iconW-20, h:rowH-20};
-      const cIcon = document.createElement("canvas");
-      cIcon.width = iconCrop.w;
-      cIcon.height = iconCrop.h;
-      cIcon.getContext("2d").drawImage(img,
-        iconCrop.x, iconCrop.y, iconCrop.w, iconCrop.h,
-        0,0,iconCrop.w,iconCrop.h
-      );
-      const iconData = cIcon.toDataURL();
-
-      // 同盟名部分
-      const textCrop = {x:nameX, y:y+10, w:nameW, h:rowH-20};
-      const pre = preprocess(img, textCrop);
-      const blob = await (await fetch(pre)).blob();
-
-      const res = await Tesseract.recognize(blob, "jpn+eng");
-      let name = res.data.text.trim().replace(/\s+/g,"");
-
-      if(name.length >= 2 && name.length <= 20){
-        addRow(name, iconData);
-      }
-    }
-  }
-
-  document.getElementById("status").textContent = "OCR完了！ 必要に応じて修正できます。";
+/* register service worker if present */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('service-worker.js').catch(e=>console.warn(e));
 }
 </script>
 </body>
