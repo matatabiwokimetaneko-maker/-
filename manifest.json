@@ -1,0 +1,20 @@
+{
+  "name": "争覇戦ポイント計算",
+  "short_name": "争覇戦計算",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "icons": [
+    {
+      "src": "icon192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>争覇戦ポイント計算（完全版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- OCR（日本語＋英語＋数字） -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<!-- html2canvas（画像書き出し用） -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<link rel="manifest" href="manifest.json">
+
+<style>
+/* ---------- 全体テーマ（ゲーム風UI） ---------- */
+:root {
+    --bg: #191919;
+    --fg: #f2f2f2;
+    --panel: #292929;
+    --th: #3d3d3d;
+    --hl: #5a4b00;
+    --border: #595959;
+    --accent-blue: #2979ff;
+    --accent-red: #e53935;
+}
+
+body {
+    margin: 10px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+h1 {
+    text-align: center;
+    color: #ffd86b;
+    text-shadow: 0 0 8px #664f00;
+}
+
+button {
+    border: none;
+    padding: 10px 16px;
+    margin: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #fff;
+}
+.blue { background: var(--accent-blue); }
+.red  { background: var(--accent-red); }
+.yellow { background: #b38600; }
+
+table {
+    width: 100%;
+    background: var(--panel);
+    margin-top: 10px;
+    border-collapse: collapse;
+    box-shadow: 0 0 10px #000;
+}
+th, td {
+    border: 1px solid var(--border);
+    padding: 6px;
+    text-align: center;
+}
+th {
+    background: var(--th);
+}
+
+input[type="number"], input[type="text"] {
+    width: 70px;
+    padding: 5px;
+    border-radius: 4px;
+    border: none;
+}
+
+.highlight-row td { background: var(--hl) !important; }
+
+#output-img {
+    margin-top: 20px;
+    display: none;
+    width: 100%;
+}
+</style>
+</head>
+
+<body>
+
+<h1>争覇戦ポイント計算（完全版）</h1>
+
+<button class="yellow" onclick="toggleDark()">🌙 モード切替</button>
+<button class="blue" onclick="sortTable(true)">▲ 昇順</button>
+<button class="red" onclick="sortTable(false)">▼ 降順</button>
+<button class="blue" onclick="exportImage()">📷 結果を画像化</button>
+
+<h3>📸 同盟アイコン＋同盟名 OCR 読み取り</h3>
+<input type="file" id="ocrImages" multiple accept="image/*" onchange="readAllianceImages()">
+<br>
+<br>
+
+<table id="mainTable">
+    <tr>
+        <th>同盟アイコン</th>
+        <th>同盟名</th>
+        <th>1日目</th>
+        <th>2日目</th>
+        <th>3日目</th>
+        <th>4日目</th>
+        <th>5日目</th>
+        <th>6日目</th>
+        <th>合計</th>
+    </tr>
+    <tbody id="inputRows"></tbody>
+</table>
+
+<img id="output-img">
+
+<script>
+const itemCount = 7;
+const dayCount = 6;
+
+/* ---------------------------
+   初期ロード
+---------------------------- */
+window.onload = () => {
+    const tbody = document.getElementById("inputRows");
+
+    for (let i = 1; i <= itemCount; i++) {
+        let row = `<tr id="row${i}">
+            <td id="iconCell${i}">
+                <img id="icon${i}" style="width:40px;height:40px;">
+            </td>
+            <td onclick="toggleHighlight(${i})">
+                <input type="text" id="name${i}" placeholder="同盟${i}" oninput="saveData()">
+            </td>`;
+
+        for (let d = 1; d <= dayCount; d++) {
+            row += `<td><input type="number" id="item${i}_day${d}" value="0"
+                    oninput="autoCalc(${i}); saveData();"></td>`;
+        }
+        row += `<td id="total${i}">0</td></tr>`;
+        tbody.innerHTML += row;
+    }
+
+    loadData();
+    for (let i = 1; i <= itemCount; i++) autoCalc(i);
+};
+
+/* ---------------------------
+   行ハイライト
+---------------------------- */
+function toggleHighlight(i) {
+    const row = document.getElementById(`row${i}`);
+    row.classList.toggle("highlight-row");
+    saveData();
+}
+
+/* ---------------------------
+   自動計算
+---------------------------- */
+function autoCalc(i) {
+    let sum = 0;
+    for (let d = 1; d <= dayCount; d++) {
+        sum += Number(document.getElementById(`item${i}_day${d}`).value);
+    }
+    document.getElementById(`total${i}`).textContent = sum;
+}
+
+/* ---------------------------
+   並び替え
+---------------------------- */
+function sortTable(asc) {
+    const tbody = document.getElementById("inputRows");
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+
+    rows.sort((a, b) => {
+        const A = Number(a.querySelector("td:last-child").textContent);
+        const B = Number(b.querySelector("td:last-child").textContent);
+        return asc ? A - B : B - A;
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+    saveData();
+}
+
+/* ---------------------------
+   保存＆復元
+---------------------------- */
+function saveData() {
+    const data = {};
+    const order = [];
+
+    for (let i = 1; i <= itemCount; i++) {
+        order.push(i);
+
+        data[`name${i}`] = document.getElementById(`name${i}`).value;
+
+        for (let d = 1; d <= dayCount; d++) {
+            data[`item${i}_day${d}`] =
+                document.getElementById(`item${i}_day${d}`).value;
+        }
+
+        data[`highlight${i}`] =
+            document.getElementById(`row${i}`).classList.contains("highlight-row");
+
+        const img = document.getElementById(`icon${i}`);
+        data[`icon${i}`] = img.src || "";
+    }
+
+    data.order = order;
+    localStorage.setItem("pointDataFull", JSON.stringify(data));
+}
+
+function loadData() {
+    const data = JSON.parse(localStorage.getItem("pointDataFull"));
+    if (!data) return;
+
+    for (let i = 1; i <= itemCount; i++) {
+        if (data[`name${i}`]) document.getElementById(`name${i}`).value = data[`name${i}`];
+
+        for (let d = 1; d <= dayCount; d++) {
+            const key = `item${i}_day${d}`;
+            if (data[key]) document.getElementById(key).value = data[key];
+        }
+
+        if (data[`highlight${i}`])
+            document.getElementById(`row${i}`).classList.add("highlight-row");
+
+        if (data[`icon${i}`])
+            document.getElementById(`icon${i}`).src = data[`icon${i}`];
+    }
+}
+
+/* ---------------------------
+   ダークモード
+---------------------------- */
+function toggleDark() {
+    document.body.classList.toggle("dark");
+}
+
+/* ------------------------------------------------------
+   1️⃣ アイコン＋名前 OCR（同盟アイコンにも対応）
+------------------------------------------------------ */
+async function readAllianceImages() {
+    const files = document.getElementById("ocrImages").files;
+    if (!files.length) return;
+
+    alert("OCR（アイコン＋名前）を解析中… 少しお待ちください");
+
+    let allNames = [];
+    let iconIndex = 1;
+
+    for (const file of files) {
+        const imageURL = URL.createObjectURL(file);
+
+        // アイコン画像を順番に割り当て
+        if (iconIndex <= itemCount) {
+            document.getElementById(`icon${iconIndex}`).src = imageURL;
+            iconIndex++;
+        }
+
+        const result = await Tesseract.recognize(file, "jpn+eng");
+        const text = result.data.text;
+
+        const lines = text.split("\n")
+            .map(l => l.trim())
+            .filter(l => l.length >= 2 && l.length <= 20)
+            .filter(l => !/^\d+$/.test(l))
+            .filter(l => !l.includes("pt") && !l.includes("位"));
+
+        allNames.push(...lines);
+    }
+
+    // 重複削除
+    allNames = [...new Set(allNames)];
+
+    // 上から7件セット
+    for (let i = 1; i <= itemCount; i++) {
+        document.getElementById(`name${i}`).value = allNames[i - 1] || "";
+    }
+
+    saveData();
+    alert("同盟名とアイコンを読み取りました！");
+}
+
+/* ------------------------------------------------------
+   2️⃣ 結果を画像として出力（PNG）
+------------------------------------------------------ */
+function exportImage() {
+    const area = document.getElementById("mainTable");
+
+    html2canvas(area).then(canvas => {
+        const img = document.getElementById("output-img");
+        img.src = canvas.toDataURL("image/png");
+        img.style.display = "block";
+
+        const link = document.createElement("a");
+        link.download = "争覇戦ポイント.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+    });
+}
+</script>
+</body>
+</html>
